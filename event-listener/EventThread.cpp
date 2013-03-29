@@ -18,7 +18,6 @@
 #include <assert.h>
 #include <strings.h>
 #include <string.h>
-#include <time.h>
 
 #define LOG_TAG "EVENT_THREAD"
 #include <utils/Log.h>
@@ -26,20 +25,8 @@
 
 #include "EventThread.h"
 
-const int64_t MILLISECONDS_IN_SECONDS      = 1000;
-const int64_t NANOSECONDS_IN_MILLISECONDS  = 1000 * 1000;
-
-#define SECONDS_TO_MILLISECONDS(seconds)            (int32_t(seconds) * MILLISECONDS_IN_SECONDS)
-#define NANOSECONDS_TO_MILLISECONDS(nanoseconds)    ((nanoseconds) / NANOSECONDS_IN_MILLISECONDS)
-
 CEventThread::CEventThread(IEventListener* pEventListener, bool bLogsOn) :
-    _pEventListener(pEventListener),
-    _bIsStarted(false),
-    _ulThreadId(0),
-    _uiNbPollFds(0),
-    _iAlarmMs(-1),
-    _bThreadContext(false),
-    _bLogsOn(bLogsOn)
+    _pEventListener(pEventListener), _bIsStarted(false), _ulThreadId(0), _uiNbPollFds(0), _uiTimeoutMs(-1), _bThreadContext(false), _bLogsOn(bLogsOn)
 {
     assert(pEventListener);
 
@@ -128,23 +115,15 @@ int CEventThread::getFd(uint32_t uiClientFdId) const
     return -1;
 }
 
-// Start an alarm which will trig onAlarm() in 'last' ms from now (must be called from the EventThread thread context)
-void CEventThread::startAlarm(uint32_t uiDurationMs)
+// Timeout (must be called from within thread when started or anywhere when not started)
+void CEventThread::setTimeoutMs(uint32_t uiTimeoutMs)
 {
-
-    LOGD("%s %dms", __func__, uiDurationMs);
-
-    // Add the alarm duration to the current date to compute the alarm date
-    _iAlarmMs = getCurrentDateMs() + uiDurationMs;
-
+    _uiTimeoutMs = uiTimeoutMs;
 }
 
-// Clear the alarm (must be called from the EventThread thread context)
-void CEventThread::cancelAlarm()
+uint32_t CEventThread::getTimeoutMs() const
 {
-    LOGD("%s", __func__);
-
-    _iAlarmMs = -1;
+    return _uiTimeoutMs;
 }
 
 // Start
@@ -223,32 +202,13 @@ void CEventThread::run()
 
         buildPollFds(astPollFds);
 
-        /// Poll
-        int iTimeoutMs = -1;
-        // Compute the poll timeout regarding the alarm
-        if (_iAlarmMs >= 0) {
-
-            // Get current time in milliseconds
-            int64_t now = getCurrentDateMs();
-
-            // Future ?
-            if (_iAlarmMs > now) {
-
-                iTimeoutMs = (int) (_iAlarmMs - now);
-            } else {
-
-                iTimeoutMs = 0;
-            }
-
-        }
-        // Do poll
-        LOGD("%s Do poll with timeout: %d", __func__, iTimeoutMs);
-        int iPollRes = poll(astPollFds, _uiNbPollFds, iTimeoutMs);
+        // Poll
+        int iPollRes = poll(astPollFds, _uiNbPollFds, _uiTimeoutMs);
 
         if (!iPollRes) {
 
             // Timeout case
-            _pEventListener->onAlarm();
+            _pEventListener->onTimeout();
 
             continue;
         }
@@ -359,17 +319,6 @@ void CEventThread::buildPollFds(struct pollfd* paPollFds) const
     }
     // Consistency
     assert(uiFdIndex == _uiNbPollFds);
-}
-
-// Get current date in milliseconds
-int64_t CEventThread::getCurrentDateMs()
-{
-    timespec now;
-
-    // Get current time
-    clock_gettime(CLOCK_MONOTONIC, &now);
-
-    return SECONDS_TO_MILLISECONDS(now.tv_sec) + NANOSECONDS_TO_MILLISECONDS(now.tv_nsec);
 }
 
 // Logs Activation
