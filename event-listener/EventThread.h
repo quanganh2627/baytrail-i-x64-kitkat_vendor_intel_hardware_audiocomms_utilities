@@ -62,11 +62,9 @@ public:
     // Remove and close FD from index
     void closeAndRemoveFd(uint32_t uiClientFdId);
 
-    /// Alarm management
-    // Start an alarm which will trig onAlarm() in 'last' ms from now (must be called from the EventThread thread context)
-    void startAlarm(uint32_t uiDurationMs);
-    // Clear the alarm (must be called from the EventThread thread context)
-    void cancelAlarm();
+    // Timeout (must be called from within thread when started or anytime when not started)
+    void setTimeoutMs(uint32_t uiTimeoutMs);
+    uint32_t getTimeoutMs() const;
 
     // Thread start
     bool start();
@@ -93,10 +91,6 @@ private:
     void removeListenedFd(int iFd);
     // Poll FD computation
     void buildPollFds(struct pollfd* paPollFds) const;
-    // Get current date in milliseconds
-    static int64_t getCurrentDateMs();
-
-private:
     // Listener
     IEventListener* _pEventListener;
     // State
@@ -109,8 +103,8 @@ private:
     list<SFd> _sFdList;
     // Polled FD count
     uint32_t _uiNbPollFds;
-    // Alarm date in milliseconds
-    int64_t _iAlarmMs;
+    // Wait timeout
+    uint32_t _uiTimeoutMs;
     // Thread context
     bool _bThreadContext;
     // EventThread logs enabled
